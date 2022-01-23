@@ -1,62 +1,84 @@
+const { is } = require('express/lib/request');
 const query = require('../db/db-connection');
 const { multipleColumnSet } = require('../utils/common.utils');
 const Role = require('../utils/userRoles.utils');
+const ShortId = require('shortid');
 class UserModel {
-    tableName = 'user';
+	tableName = 'users';
+	find = async (params = {}) => {
+		let sql = `SELECT * FROM ${this.tableName}`;
 
-    find = async (params = {}) => {
-        let sql = `SELECT * FROM ${this.tableName}`;
+		if (!Object.keys(params).length) {
+			return await query(sql);
+		}
 
-        if (!Object.keys(params).length) {
-            return await query(sql);
-        }
+		const { columnSet, values } = multipleColumnSet(params);
+		sql += ` WHERE ${columnSet}`;
 
-        const { columnSet, values } = multipleColumnSet(params)
-        sql += ` WHERE ${columnSet}`;
+		return await query(sql, [...values]);
+	};
 
-        return await query(sql, [...values]);
-    }
+	findOne = async (params) => {
+		const { columnSet, values } = multipleColumnSet(params);
 
-    findOne = async (params) => {
-        const { columnSet, values } = multipleColumnSet(params)
-
-        const sql = `SELECT * FROM ${this.tableName}
+		const sql = `SELECT * FROM ${this.tableName}
         WHERE ${columnSet}`;
 
-        const result = await query(sql, [...values]);
+		const result = await query(sql, [...values]);
 
-        // return back the first row (user)
-        return result[0];
-    }
+		// return back the first row (user)
+		return result[0];
+	};
 
-    create = async ({ username, password, first_name, last_name, email, role = Role.SuperUser, age = 0 }) => {
-        const sql = `INSERT INTO ${this.tableName}
-        (username, password, first_name, last_name, email, role, age) VALUES (?,?,?,?,?,?,?)`;
+	/*
+	* Create a new user
+	*/
+	create = async ({ email, password, first_name, last_name, role }) => {
+		/* create uniue username for each user created by the super-admin */
+		let username = await this.generateUniqueAccountName(first_name + last_name);
+		console.log(`unique username: ${username}`);
 
-        const result = await query(sql, [username, password, first_name, last_name, email, role, age]);
-        const affectedRows = result ? result.affectedRows : 0;
+		/* create unique identification id of the user */
+		let userUniqueId = ShortId.generate();
+		console.log(`unique user id:  ${userUniqueId}`);
 
-        return affectedRows;
-    }
+		const sql = `INSERT INTO ${this.tableName}
+        (unique_id,username,password, first_name, last_name, email, role) VALUES (?,?,?,?,?,?,?)`;
 
-    update = async (params, id) => {
-        const { columnSet, values } = multipleColumnSet(params)
+		const result = await query(sql, [userUniqueId, username, password, first_name, last_name, email, role]);
 
-        const sql = `UPDATE user SET ${columnSet} WHERE id = ?`;
+		return result ? result.affectedRows : 0;;
+	};
 
-        const result = await query(sql, [...values, id]);
+	/* generate user unique username */
+	generateUniqueAccountName = async (proposedName) => {
+		const user = await this.findOne({ username: proposedName });
+		/* user exist in db with this username */
+		if (user) {
+			proposedName += Math.floor((Math.random() * 100) + 1);
+			return this.generateUniqueAccountName(proposedName);
+		}
+		return proposedName;
+	}
 
-        return result;
-    }
+	update = async (params, id) => {
+		const { columnSet, values } = multipleColumnSet(params);
 
-    delete = async (id) => {
-        const sql = `DELETE FROM ${this.tableName}
+		const sql = `UPDATE user SET ${columnSet} WHERE id = ?`;
+
+		const result = await query(sql, [...values, id]);
+
+		return result;
+	};
+
+	delete = async (id) => {
+		const sql = `DELETE FROM ${this.tableName}
         WHERE id = ?`;
-        const result = await query(sql, [id]);
-        const affectedRows = result ? result.affectedRows : 0;
+		const result = await query(sql, [id]);
+		const affectedRows = result ? result.affectedRows : 0;
 
-        return affectedRows;
-    }
+		return affectedRows;
+	};
 }
 
-module.exports = new UserModel;
+module.exports = new UserModel();
